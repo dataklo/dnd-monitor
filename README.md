@@ -1,55 +1,83 @@
 # DND Monitor für Snom D385
 
-Dieses Projekt stellt einen kleinen Webserver bereit, der die Action-URLs von Snom-Telefonen verarbeitet und auf einer Dashboard-Seite als Kacheln visualisiert.
+Der DND Monitor zeigt dir den Status deiner Snom-Telefone als große Kacheln im Browser an.
+Gedacht ist das Ganze für ein Tablet oder einen Bildschirm im Büro (z. B. am Empfang).
 
-## Funktionen
+- **Grün** = frei
+- **Gelb** = im Gespräch
+- **Rot** = DND aktiv
 
-- Endpunkte für Snom-Actions:
-  - `/status/dnd-on?mac=<MAC>`
-  - `/status/dnd-off?mac=<MAC>`
-  - `/status/connected?mac=<MAC>`
-  - `/status/disconnected?mac=<MAC>`
-- Neue MAC-Adressen werden automatisch als neues Telefon angelegt.
-- Anzeige-Logik:
-  - **Grün**: nicht DND und nicht im Gespräch
-  - **Gelb**: im Gespräch (hat Vorrang, auch wenn DND aktiv ist)
-  - **Rot**: DND aktiv und nicht im Gespräch
-- Schwarzer Seitenhintergrund.
-- 4 Kacheln pro Reihe (responsive bei kleinen Displays).
-- Namensauflösung über Konfigurationsdatei (`config/users.json`), sonst Anzeige der MAC.
+![Beispielansicht DND Monitor](docs/dashboard-example.svg)
 
-## Komplett-Installation auf Ubuntu 25.04 minimal (Proxmox CT)
+---
 
-> Als root oder mit `sudo -i` ausführen.
+## Für wen ist diese Anleitung?
+
+Für Leute, die Linux nur selten nutzen.  
+Ich schreibe die Schritte deshalb extra einfach und ohne Abkürzungen.
+
+---
+
+## Voraussetzungen
+
+- Ubuntu/Debian-Server oder Proxmox-Container
+- Internetzugang auf dem Server
+- Ein Benutzer mit `sudo`-Rechten (oder direkt `root`)
+
+---
+
+## Installation (Schritt für Schritt)
+
+### 1) Als root anmelden
+
+Wenn du nicht als root angemeldet bist:
+
+```bash
+sudo -i
+```
+
+### 2) Git installieren
 
 ```bash
 apt update
 apt install -y git
+```
+
+### 3) Projekt herunterladen
+
+```bash
 cd /opt
-git clone <DEIN-REPO-URL> dnd-monitor
+git clone https://github.com/dataklo/dnd-monitor.git dnd-monitor
 cd dnd-monitor
+```
+
+### 4) Installation starten
+
+```bash
 ./install.sh
 ```
 
-### Enthaltene Pakete durch Install-Skript
+Das Script installiert automatisch alles Nötige (Python, venv, Service usw.) und startet den Dienst.
 
-- `python3`
-- `python3-venv`
-- `python3-pip`
-- `nano`
-- `htop`
-- `git`
-- `curl`
+### 5) Im Browser öffnen
 
-## Konfiguration Namen
+```text
+http://<SERVER-IP>:5000
+```
 
-Datei anpassen:
+Beispiel: `http://192.168.1.20:5000`
+
+---
+
+## Namen der Telefone anzeigen (statt MAC)
+
+Datei öffnen:
 
 ```bash
 nano /opt/dnd-monitor/config/users.json
 ```
 
-Format:
+Beispielinhalt:
 
 ```json
 {
@@ -60,9 +88,17 @@ Format:
 }
 ```
 
-## Snom Action URLs
+Danach Dienst neu starten:
 
-Im Snom-Provisioning (oder pro Telefon) setzen:
+```bash
+systemctl restart dnd-monitor
+```
+
+---
+
+## Snom Action-URLs eintragen
+
+Diese URLs müssen in die Snom-Konfiguration:
 
 ```xml
 <action_dnd_on_url perm="R">http://<SERVER-IP>:5000/status/dnd-on?mac=$mac</action_dnd_on_url>
@@ -71,14 +107,63 @@ Im Snom-Provisioning (oder pro Telefon) setzen:
 <action_disconnected_url perm="R">http://<SERVER-IP>:5000/status/disconnected?mac=$mac</action_disconnected_url>
 ```
 
-## Service-Verwaltung
+---
+
+## Wichtige Befehle im Alltag
+
+Status prüfen:
 
 ```bash
-systemctl status dnd-monitor
+systemctl status dnd-monitor --no-pager
+```
+
+Neu starten:
+
+```bash
 systemctl restart dnd-monitor
+```
+
+Live-Log ansehen:
+
+```bash
 journalctl -u dnd-monitor -f
 ```
 
-## Tablet-Ansicht
+---
 
-Einfach `http://<SERVER-IP>:5000` im Browser öffnen und ggf. als Vollbild/PWA-Kioskmodus verwenden.
+## Update durchführen
+
+Wenn neue Versionen verfügbar sind:
+
+```bash
+cd /opt/dnd-monitor
+./update.sh
+```
+
+Was passiert dabei?
+- `git pull` lädt den neuesten Stand
+- `install.sh` wird danach erneut ausgeführt
+- Dienst wird mit der neuen Version gestartet
+
+---
+
+## Deinstallation
+
+Wenn du das Projekt komplett entfernen willst:
+
+```bash
+cd /opt/dnd-monitor
+./uninstall.sh
+```
+
+Das Script stoppt und entfernt den Service und löscht das Verzeichnis `/opt/dnd-monitor`.
+
+---
+
+## Tipp für Wand-Tablet / Daueranzeige
+
+- Browser im Vollbild starten
+- Auto-Sperre deaktivieren
+- Seite als Startseite festlegen
+
+Dann hast du eine saubere, dauerhafte Statusanzeige ohne Scrollen.
