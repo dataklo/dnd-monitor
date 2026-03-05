@@ -10,21 +10,26 @@ if [[ "$EUID" -ne 0 ]]; then
   exit 1
 fi
 
+echo "[1/6] Pakete installieren ..."
 apt update
-apt install -y python3 python3-venv python3-pip nano htop git curl
+apt install -y python3 python3-venv python3-pip rsync nano htop git curl
 
+echo "[2/6] Dateien nach $APP_DIR kopieren ..."
 mkdir -p "$APP_DIR"
 rsync -a --delete ./ "$APP_DIR"/
 
+echo "[3/6] Python-Umgebung einrichten ..."
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --upgrade pip
 "$VENV_DIR/bin/pip" install -r "$APP_DIR/requirements.txt"
 
+echo "[4/6] Beispiel-Konfiguration anlegen (falls nötig) ..."
 if [[ ! -f "$APP_DIR/config/users.json" ]]; then
   cp "$APP_DIR/config/users.example.json" "$APP_DIR/config/users.json"
 fi
 
-cat > "$SERVICE_FILE" <<EOF
+echo "[5/6] systemd-Service erstellen ..."
+cat > "$SERVICE_FILE" <<EOS
 [Unit]
 Description=DND Monitor Webservice
 After=network.target
@@ -40,10 +45,16 @@ Group=root
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOS
 
+echo "[6/6] Service starten ..."
 systemctl daemon-reload
 systemctl enable --now dnd-monitor.service
-systemctl status --no-pager dnd-monitor.service
 
-echo "Fertig. Weboberfläche: http://<CT-IP>:5000"
+cat <<MSG
+
+Installation abgeschlossen.
+Weboberfläche: http://<SERVER-IP>:5000
+Status prüfen: systemctl status dnd-monitor --no-pager
+
+MSG
