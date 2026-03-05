@@ -82,11 +82,25 @@ Beispielinhalt:
 ```json
 {
   "users": {
-    "00041393C660": "Empfang",
-    "00041393C661": "Büro 1"
+    "00041393C660": {
+      "name": "Empfang",
+      "id": 1
+    },
+    "00041393C661": {
+      "name": "Büro 1",
+      "id": 2
+    }
   }
 }
 ```
+
+
+Die `id` steuert die Reihenfolge im Raster:
+- `1` = oben links (1. Zeile), `4` = oben rechts (bei 4 Spalten)
+- `5` beginnt in der 2. Zeile links usw.
+- Fehlt eine Zahl, wird einfach die nächste vorhandene Kachel angezeigt.
+
+Unbekannte MAC-Adressen werden bei einem Event automatisch in `/opt/dnd-monitor/config/users.json` angelegt und erhalten die nächste freie `id` ab `101`.
 
 Danach Dienst neu starten:
 
