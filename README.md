@@ -121,6 +121,22 @@ Diese URLs müssen in die Snom-Konfiguration:
 <action_disconnected_url perm="R">http://<SERVER-IP>:5000/status/disconnected?mac=$mac</action_disconnected_url>
 ```
 
+Bei jedem Event prüft der Monitor die Quell-IP zum Telefon (MAC → IP) und schreibt sie nur in `data/phones.json`, wenn sie sich geändert hat.
+
+### DND per Klick auf Kachel auslösen
+
+Wenn du im Dashboard auf den **Namen** einer Kachel tippst/klickst, ruft der Server am passenden Telefon auf:
+
+```bash
+curl --digest -u root:lbs2021 "http://<telefon-ip>/command.htm?key=DND"
+```
+
+Die `<telefon-ip>` kommt automatisch aus der zuletzt zur MAC gespeicherten Event-IP (DHCP-geeignet).
+
+Vor dem Auslösen erscheint eine Sicherheitsabfrage (Bestätigen/Abbrechen).
+
+Zum Schutz vor Mehrfachklicks gilt pro Telefon ein Cooldown von 5 Sekunden.
+
 ---
 
 ## Wichtige Befehle im Alltag
