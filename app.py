@@ -4,6 +4,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import HTTPDigestAuthHandler, HTTPPasswordMgrWithDefaultRealm, build_opener
 
 from flask import Flask, jsonify, render_template, request
 
@@ -36,6 +39,11 @@ EVENT_MAP = {
     "connected": {"connected": True},
     "disconnected": {"connected": False},
 }
+
+WEBHOOK_USER = "root"
+WEBHOOK_PASSWORD = "lbs2021"
+WEBHOOK_KEY = "DND"
+DND_COOLDOWN_SECONDS = 5
 
 
 def utc_now_iso() -> str:
@@ -165,6 +173,60 @@ def upsert_phone(statuses: dict[str, dict], mac: str) -> dict:
     return statuses[mac]
 
 
+def request_ip() -> str | None:
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        first_ip = forwarded.split(",", 1)[0].strip()
+        if first_ip:
+            return first_ip
+
+    return request.remote_addr
+
+
+def trigger_dnd_webhook(ip: str) -> tuple[bool, str, int | None]:
+    url = f"http://{ip}/command.htm?{urlencode({'key': WEBHOOK_KEY})}"
+
+    password_mgr = HTTPPasswordMgrWithDefaultRealm()
+    password_mgr.add_password(None, url, WEBHOOK_USER, WEBHOOK_PASSWORD)
+    auth_handler = HTTPDigestAuthHandler(password_mgr)
+    opener = build_opener(auth_handler)
+
+    try:
+        with opener.open(url, timeout=5) as response:
+            return True, "ok", getattr(response, "status", 200)
+    except HTTPError as exc:
+        return False, f"http_error:{exc.code}", exc.code
+    except URLError as exc:
+        return False, f"url_error:{exc.reason}", None
+
+
+def parse_iso_datetime(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def is_in_cooldown(phone: dict, now: datetime) -> tuple[bool, int]:
+    last_triggered = str(phone.get("last_dnd_trigger_at") or "").strip()
+    if not last_triggered:
+        return False, 0
+
+    last_dt = parse_iso_datetime(last_triggered)
+    if last_dt is None:
+        return False, 0
+
+    delta_seconds = (now - last_dt).total_seconds()
+    if delta_seconds >= DND_COOLDOWN_SECONDS:
+        return False, 0
+
+    remaining = int(DND_COOLDOWN_SECONDS - delta_seconds)
+    if (DND_COOLDOWN_SECONDS - delta_seconds) > remaining:
+        remaining += 1
+
+    return True, max(remaining, 1)
+
+
 def tile_status(phone: dict) -> str:
     if not phone or not phone.get("updated_at"):
         return "unknown"
@@ -237,10 +299,77 @@ def update_status(event: str):
         phone = upsert_phone(statuses, mac)
         phone.update(change)
         phone["last_event"] = event
+
+        incoming_ip = request_ip()
+        if incoming_ip and incoming_ip != str(phone.get("ip") or ""):
+            phone["ip"] = incoming_ip
+
         phone["updated_at"] = utc_now_iso()
         save_statuses(statuses)
 
     return jsonify({"ok": True, "mac": mac, "event": event, "state": phone})
+
+
+@app.post("/api/phones/<mac>/dnd")
+def trigger_phone_dnd(mac: str):
+    normalized_mac = normalize_mac(mac)
+
+    with state_lock:
+        statuses = load_statuses()
+        phone = statuses.get(normalized_mac)
+
+    if not phone:
+        return jsonify({"ok": False, "error": "unknown mac"}), 404
+
+    ip = str(phone.get("ip") or "").strip()
+    if not ip:
+        return jsonify({"ok": False, "error": "missing ip for mac"}), 400
+
+    now = datetime.now(timezone.utc)
+    in_cooldown, remaining_seconds = is_in_cooldown(phone, now)
+    if in_cooldown:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "cooldown active",
+                    "mac": normalized_mac,
+                    "ip": ip,
+                    "retry_after": remaining_seconds,
+                }
+            ),
+            429,
+        )
+
+    with state_lock:
+        statuses = load_statuses()
+        phone = statuses.get(normalized_mac)
+        if phone:
+            phone["last_dnd_trigger_at"] = now.isoformat()
+            save_statuses(statuses)
+
+    ok, detail, status_code = trigger_dnd_webhook(ip)
+    if not ok:
+        return (
+            jsonify({
+                "ok": False,
+                "error": "webhook failed",
+                "detail": detail,
+                "mac": normalized_mac,
+                "ip": ip,
+            }),
+            502,
+        )
+
+    return jsonify(
+        {
+            "ok": True,
+            "mac": normalized_mac,
+            "ip": ip,
+            "webhook_status": status_code,
+            "cooldown_seconds": DND_COOLDOWN_SECONDS,
+        }
+    )
 
 
 if __name__ == "__main__":
