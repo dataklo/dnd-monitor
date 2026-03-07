@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
@@ -9,6 +10,7 @@ from urllib.parse import urlencode
 from urllib.request import HTTPDigestAuthHandler, HTTPPasswordMgrWithDefaultRealm, build_opener
 
 from flask import Flask, jsonify, render_template, request
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -30,6 +32,9 @@ def resolve_config_file() -> Path:
 CONFIG_FILE = resolve_config_file()
 
 app = Flask(__name__)
+TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
+if TRUSTED_PROXY_HOPS > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=TRUSTED_PROXY_HOPS, x_host=0, x_proto=0, x_port=0, x_prefix=0)
 state_lock = Lock()
 
 
@@ -174,12 +179,6 @@ def upsert_phone(statuses: dict[str, dict], mac: str) -> dict:
 
 
 def request_ip() -> str | None:
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        first_ip = forwarded.split(",", 1)[0].strip()
-        if first_ip:
-            return first_ip
-
     return request.remote_addr
 
 
@@ -313,40 +312,35 @@ def update_status(event: str):
 @app.post("/api/phones/<mac>/dnd")
 def trigger_phone_dnd(mac: str):
     normalized_mac = normalize_mac(mac)
-
-    with state_lock:
-        statuses = load_statuses()
-        phone = statuses.get(normalized_mac)
-
-    if not phone:
-        return jsonify({"ok": False, "error": "unknown mac"}), 404
-
-    ip = str(phone.get("ip") or "").strip()
-    if not ip:
-        return jsonify({"ok": False, "error": "missing ip for mac"}), 400
-
     now = datetime.now(timezone.utc)
-    in_cooldown, remaining_seconds = is_in_cooldown(phone, now)
-    if in_cooldown:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": "cooldown active",
-                    "mac": normalized_mac,
-                    "ip": ip,
-                    "retry_after": remaining_seconds,
-                }
-            ),
-            429,
-        )
 
     with state_lock:
         statuses = load_statuses()
         phone = statuses.get(normalized_mac)
-        if phone:
-            phone["last_dnd_trigger_at"] = now.isoformat()
-            save_statuses(statuses)
+        if not phone:
+            return jsonify({"ok": False, "error": "unknown mac"}), 404
+
+        ip = str(phone.get("ip") or "").strip()
+        if not ip:
+            return jsonify({"ok": False, "error": "missing ip for mac"}), 400
+
+        in_cooldown, remaining_seconds = is_in_cooldown(phone, now)
+        if in_cooldown:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": "cooldown active",
+                        "mac": normalized_mac,
+                        "ip": ip,
+                        "retry_after": remaining_seconds,
+                    }
+                ),
+                429,
+            )
+
+        phone["last_dnd_trigger_at"] = now.isoformat()
+        save_statuses(statuses)
 
     ok, detail, status_code = trigger_dnd_webhook(ip)
     if not ok:
