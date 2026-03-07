@@ -11,11 +11,20 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 STATUS_FILE = DATA_DIR / "phones.json"
 DEFAULT_CONFIG_FILE = Path("/opt/dnd-monitor/config/users.json")
-CONFIG_FILE = (
-    DEFAULT_CONFIG_FILE
-    if DEFAULT_CONFIG_FILE.exists() or DEFAULT_CONFIG_FILE.parent.exists()
-    else BASE_DIR / "config" / "users.json"
-)
+LOCAL_CONFIG_FILE = BASE_DIR / "config" / "users.json"
+
+
+def resolve_config_file() -> Path:
+    if DEFAULT_CONFIG_FILE.exists():
+        return DEFAULT_CONFIG_FILE
+    if LOCAL_CONFIG_FILE.exists():
+        return LOCAL_CONFIG_FILE
+    if DEFAULT_CONFIG_FILE.parent.exists():
+        return DEFAULT_CONFIG_FILE
+    return LOCAL_CONFIG_FILE
+
+
+CONFIG_FILE = resolve_config_file()
 
 app = Flask(__name__)
 state_lock = Lock()
@@ -58,12 +67,21 @@ def save_statuses(statuses: dict[str, dict]) -> None:
 
 
 def load_user_config() -> dict[str, dict]:
-    if not CONFIG_FILE.exists():
-        return {}
+    config_candidates = [CONFIG_FILE]
+    fallback = LOCAL_CONFIG_FILE if CONFIG_FILE == DEFAULT_CONFIG_FILE else DEFAULT_CONFIG_FILE
+    config_candidates.append(fallback)
 
-    try:
-        raw = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
+    raw = None
+    for config_file in config_candidates:
+        if not config_file.exists():
+            continue
+        try:
+            raw = json.loads(config_file.read_text(encoding="utf-8"))
+            break
+        except json.JSONDecodeError:
+            continue
+
+    if raw is None:
         return {}
 
     users = raw.get("users", {})
@@ -166,8 +184,10 @@ def phones_api():
     with state_lock:
         statuses = load_statuses()
 
+    known_macs = set(user_config.keys()) | set(statuses.keys())
+
     sorted_macs = sorted(
-        statuses.keys(),
+        known_macs,
         key=lambda mac: (
             user_config.get(mac, {}).get("id")
             if isinstance(user_config.get(mac, {}).get("id"), int)
@@ -179,9 +199,14 @@ def phones_api():
 
     phones = []
     for mac in sorted_macs:
-        phone = statuses[mac]
+        phone = statuses.get(mac, {})
         phones.append(
             {
+                "mac": mac,
+                "dnd": bool(phone.get("dnd", False)),
+                "connected": bool(phone.get("connected", False)),
+                "last_event": phone.get("last_event", "config-only"),
+                "updated_at": phone.get("updated_at"),
                 **phone,
                 "display_name": get_display_name(mac, user_config),
                 "status": tile_status(phone),
