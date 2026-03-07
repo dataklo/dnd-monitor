@@ -166,6 +166,8 @@ def upsert_phone(statuses: dict[str, dict], mac: str) -> dict:
 
 
 def tile_status(phone: dict) -> str:
+    if not phone or not phone.get("updated_at"):
+        return "unknown"
     if phone.get("connected"):
         return "busy"
     if phone.get("dnd"):

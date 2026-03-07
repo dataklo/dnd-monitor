@@ -49,6 +49,11 @@ main {
   background: #e33a3a;
 }
 
+.tile.unknown {
+  background: #6b7280;
+  color: #fff;
+}
+
 .tile .name {
   font-size: clamp(1rem, 2.4vw, 1.5rem);
   line-height: 1.25;
