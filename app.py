@@ -4,11 +4,13 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
+from threading import Thread
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPDigestAuthHandler, HTTPPasswordMgrWithDefaultRealm, build_opener
 
 from flask import Flask, jsonify, render_template, request
+from werkzeug.serving import make_server
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -29,7 +31,6 @@ def resolve_config_file() -> Path:
 
 CONFIG_FILE = resolve_config_file()
 
-app = Flask(__name__)
 state_lock = Lock()
 
 
@@ -237,13 +238,7 @@ def tile_status(phone: dict) -> str:
     return "free"
 
 
-@app.get("/")
-def dashboard():
-    return render_template("index.html")
-
-
-@app.get("/api/phones")
-def phones_api():
+def build_phone_payload() -> list[dict]:
     user_config = load_user_config()
     with state_lock:
         statuses = load_statuses()
@@ -261,7 +256,7 @@ def phones_api():
         ),
     )
 
-    phones = []
+    phones: list[dict] = []
     for mac in sorted_macs:
         phone = statuses.get(mac, {})
         phones.append(
@@ -277,10 +272,14 @@ def phones_api():
             }
         )
 
+    return phones
+
+
+def phones_response():
+    phones = build_phone_payload()
     return jsonify({"phones": phones, "updated_at": utc_now_iso()})
 
 
-@app.get("/status/<event>")
 def update_status(event: str):
     change = EVENT_MAP.get(event)
     if change is None:
@@ -310,7 +309,6 @@ def update_status(event: str):
     return jsonify({"ok": True, "mac": mac, "event": event, "state": phone})
 
 
-@app.post("/api/phones/<mac>/dnd")
 def trigger_phone_dnd(mac: str):
     normalized_mac = normalize_mac(mac)
 
@@ -372,6 +370,47 @@ def trigger_phone_dnd(mac: str):
     )
 
 
+def create_app(*, read_only: bool = False) -> Flask:
+    flask_app = Flask(__name__)
+
+    @flask_app.get("/")
+    def dashboard():
+        return render_template("index.html", read_only=read_only)
+
+    @flask_app.get("/api/phones")
+    def phones_api():
+        return phones_response()
+
+    @flask_app.get("/status/<event>")
+    def status_endpoint(event: str):
+        if read_only:
+            return jsonify({"ok": False, "error": "read only mode"}), 403
+        return update_status(event)
+
+    @flask_app.post("/api/phones/<mac>/dnd")
+    def dnd_endpoint(mac: str):
+        if read_only:
+            return jsonify({"ok": False, "error": "read only mode"}), 403
+        return trigger_phone_dnd(mac)
+
+    return flask_app
+
+
+app = create_app(read_only=False)
+readonly_app = create_app(read_only=True)
+
+
+def run_server(flask_app: Flask, *, port: int) -> None:
+    server = make_server("0.0.0.0", port, flask_app)
+    server.serve_forever()
+
+
 if __name__ == "__main__":
     ensure_dirs()
-    app.run(host="0.0.0.0", port=5000)
+    readonly_thread = Thread(
+        target=run_server,
+        kwargs={"flask_app": readonly_app, "port": 5001},
+        daemon=True,
+    )
+    readonly_thread.start()
+    run_server(app, port=5000)

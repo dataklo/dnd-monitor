@@ -2,6 +2,7 @@ const grid = document.getElementById("grid");
 let latestPhones = [];
 const CLICK_COOLDOWN_MS = 5000;
 const cooldownUntil = new Map();
+const READ_ONLY_MODE = window.DND_MONITOR_READONLY === true;
 
 function getColumnCount() {
   if (window.matchMedia("(max-width: 500px)").matches) {
@@ -33,7 +34,7 @@ function render(phones = latestPhones) {
     tile.innerHTML = `<div class="name">${phone.display_name}</div>`;
 
     const nameNode = tile.querySelector(".name");
-    if (nameNode) {
+    if (nameNode && !READ_ONLY_MODE) {
       nameNode.style.cursor = "pointer";
       nameNode.title = "Klicken: DND am Telefon auslösen";
 

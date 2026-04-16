@@ -67,6 +67,14 @@ http://<SERVER-IP>:5000
 
 Beispiel: `http://192.168.1.20:5000`
 
+Zusätzlich läuft automatisch eine **Nur-Anzeige** auf Port `5001`:
+
+```text
+http://<SERVER-IP>:5001
+```
+
+Diese Ansicht ist für Kollegen gedacht: Status sehen ja, aber keine Schaltfunktionen.
+
 ---
 
 ## Namen der Telefone anzeigen (statt MAC)
