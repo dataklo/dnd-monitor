@@ -10,6 +10,9 @@
     <main>
       <section id="grid" class="grid"></section>
     </main>
+    <script>
+      window.DND_MONITOR_READONLY = {{ 'true' if read_only else 'false' }};
+    </script>
     <script src="{{ url_for('static', filename='app.js') }}"></script>
   </body>
 </html>
