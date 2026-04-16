@@ -4,6 +4,7 @@ set -euo pipefail
 APP_DIR="/opt/dnd-monitor"
 VENV_DIR="$APP_DIR/.venv"
 SERVICE_FILE="/etc/systemd/system/dnd-monitor.service"
+READONLY_AUTH_FILE="$APP_DIR/config/readonly-auth.env"
 
 if [[ "$EUID" -ne 0 ]]; then
   echo "Bitte als root ausführen (sudo)."
@@ -27,6 +28,19 @@ echo "[4/6] Beispiel-Konfiguration anlegen (falls nötig) ..."
 if [[ ! -f "$APP_DIR/config/users.json" ]]; then
   cp "$APP_DIR/config/users.example.json" "$APP_DIR/config/users.json"
 fi
+if [[ ! -f "$READONLY_AUTH_FILE" ]]; then
+  readonly_password="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(18))
+PY
+)"
+  cat > "$READONLY_AUTH_FILE" <<EOF
+READONLY_USERNAME=monitor
+READONLY_PASSWORD=$readonly_password
+EOF
+  chmod 600 "$READONLY_AUTH_FILE"
+  echo "Read-only Login gespeichert in: $READONLY_AUTH_FILE"
+fi
 
 echo "[5/6] systemd-Service erstellen ..."
 cat > "$SERVICE_FILE" <<EOS
@@ -37,7 +51,8 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
-ExecStart=$VENV_DIR/bin/gunicorn -w 2 -b 0.0.0.0:5000 -b 0.0.0.0:5001 app:app
+EnvironmentFile=-$READONLY_AUTH_FILE
+ExecStart=$VENV_DIR/bin/python $APP_DIR/app.py
 Restart=always
 RestartSec=3
 User=root
@@ -55,7 +70,8 @@ cat <<MSG
 
 Installation abgeschlossen.
 Weboberfläche: http://<SERVER-IP>:5000
-Nur-Anzeige: http://<SERVER-IP>:5001
+Nur-Anzeige (mit Login): http://<SERVER-IP>:5001
+Login-Datei: $READONLY_AUTH_FILE
 Status prüfen: systemctl status dnd-monitor --no-pager
 
 MSG
