@@ -74,6 +74,21 @@ http://<SERVER-IP>:5001
 ```
 
 Diese Ansicht ist für Kollegen gedacht: Status sehen ja, aber keine Schaltfunktionen.
+Der Zugriff auf Port `5001` ist mit Benutzername/Passwort (HTTP Basic Auth) geschützt.
+Die Zugangsdaten stehen auf dem Server in:
+
+```text
+/opt/dnd-monitor/config/readonly-auth.env
+```
+
+Beispiel zum Anzeigen der Zugangsdaten:
+
+```bash
+cat /opt/dnd-monitor/config/readonly-auth.env
+```
+
+Wichtig: Die Telefon-Events/API (`/status/...` und `/api/...`) bleiben auf `5001` ohne Login erreichbar,
+damit externe Telefone (z. B. Homeoffice) weiterhin Events senden können.
 
 ---
 

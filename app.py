@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
+from hmac import compare_digest
 from pathlib import Path
 from threading import Lock
 from threading import Thread
@@ -9,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPDigestAuthHandler, HTTPPasswordMgrWithDefaultRealm, build_opener
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 from werkzeug.serving import make_server
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -45,6 +47,8 @@ WEBHOOK_USER = "root"
 WEBHOOK_PASSWORD = "lbs2021"
 WEBHOOK_KEY = "DND"
 DND_COOLDOWN_SECONDS = 5
+READONLY_USERNAME = os.getenv("READONLY_USERNAME", "")
+READONLY_PASSWORD = os.getenv("READONLY_PASSWORD", "")
 
 
 def utc_now_iso() -> str:
@@ -390,6 +394,32 @@ def create_app(*, read_only: bool = False, readonly_port: int | None = None) -> 
             return False
         return _request_port() == readonly_port
 
+    def is_readonly_auth_valid() -> bool:
+        auth = request.authorization
+        if auth is None or auth.type.lower() != "basic":
+            return False
+        return compare_digest(auth.username or "", READONLY_USERNAME) and compare_digest(
+            auth.password or "",
+            READONLY_PASSWORD,
+        )
+
+    def readonly_auth_required_response() -> Response:
+        return Response(
+            "Authentication required",
+            401,
+            {"WWW-Authenticate": 'Basic realm="DND Monitor 5001"'},
+        )
+
+    @flask_app.before_request
+    def enforce_readonly_auth():
+        if not is_read_only_request():
+            return None
+        if request.path.startswith("/status/") or request.path.startswith("/api/"):
+            return None
+        if is_readonly_auth_valid():
+            return None
+        return readonly_auth_required_response()
+
     @flask_app.get("/")
     def dashboard():
         return render_template("index.html", read_only=is_read_only_request())
@@ -400,8 +430,6 @@ def create_app(*, read_only: bool = False, readonly_port: int | None = None) -> 
 
     @flask_app.get("/status/<event>")
     def status_endpoint(event: str):
-        if is_read_only_request():
-            return jsonify({"ok": False, "error": "read only mode"}), 403
         return update_status(event)
 
     @flask_app.post("/api/phones/<mac>/dnd")
