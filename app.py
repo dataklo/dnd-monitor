@@ -370,12 +370,29 @@ def trigger_phone_dnd(mac: str):
     )
 
 
-def create_app(*, read_only: bool = False) -> Flask:
+def _request_port() -> int | None:
+    port = request.environ.get("SERVER_PORT")
+    if port is None:
+        return None
+    try:
+        return int(port)
+    except (TypeError, ValueError):
+        return None
+
+
+def create_app(*, read_only: bool = False, readonly_port: int | None = None) -> Flask:
     flask_app = Flask(__name__)
+
+    def is_read_only_request() -> bool:
+        if read_only:
+            return True
+        if readonly_port is None:
+            return False
+        return _request_port() == readonly_port
 
     @flask_app.get("/")
     def dashboard():
-        return render_template("index.html", read_only=read_only)
+        return render_template("index.html", read_only=is_read_only_request())
 
     @flask_app.get("/api/phones")
     def phones_api():
@@ -383,20 +400,20 @@ def create_app(*, read_only: bool = False) -> Flask:
 
     @flask_app.get("/status/<event>")
     def status_endpoint(event: str):
-        if read_only:
+        if is_read_only_request():
             return jsonify({"ok": False, "error": "read only mode"}), 403
         return update_status(event)
 
     @flask_app.post("/api/phones/<mac>/dnd")
     def dnd_endpoint(mac: str):
-        if read_only:
+        if is_read_only_request():
             return jsonify({"ok": False, "error": "read only mode"}), 403
         return trigger_phone_dnd(mac)
 
     return flask_app
 
 
-app = create_app(read_only=False)
+app = create_app(read_only=False, readonly_port=5001)
 readonly_app = create_app(read_only=True)
 
 

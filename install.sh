@@ -37,7 +37,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
-ExecStart=$VENV_DIR/bin/gunicorn -w 2 -b 0.0.0.0:5000 app:app
+ExecStart=$VENV_DIR/bin/gunicorn -w 2 -b 0.0.0.0:5000 -b 0.0.0.0:5001 app:app
 Restart=always
 RestartSec=3
 User=root
@@ -55,6 +55,7 @@ cat <<MSG
 
 Installation abgeschlossen.
 Weboberfläche: http://<SERVER-IP>:5000
+Nur-Anzeige: http://<SERVER-IP>:5001
 Status prüfen: systemctl status dnd-monitor --no-pager
 
 MSG
