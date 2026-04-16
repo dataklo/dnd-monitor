@@ -1,49 +1,69 @@
 # DND Monitor für Snom D385
 
-Der DND Monitor zeigt dir den Status deiner Snom-Telefone als große Kacheln im Browser an.
-Gedacht ist das Ganze für ein Tablet oder einen Bildschirm im Büro (z. B. am Empfang).
+Ein einfaches Dashboard, das den Telefonstatus deiner Snom-Telefone als große Kacheln im Browser anzeigt.
+Perfekt für Empfang, Backoffice oder ein Wand-Tablet.
 
-- **Grün** = frei
-- **Gelb** = im Gespräch
-- **Rot** = DND aktiv
+- 🟩 **Grün** = frei
+- 🟨 **Gelb** = im Gespräch
+- 🟥 **Rot** = DND aktiv
 
 ![Beispielansicht DND Monitor](docs/dashboard-example.svg)
 
 ---
 
-## Für wen ist diese Anleitung?
+## Inhalt
 
-Für Leute, die Linux nur selten nutzen.  
-Ich schreibe die Schritte deshalb extra einfach und ohne Abkürzungen.
+1. [Was macht das Projekt?](#was-macht-das-projekt)
+2. [Voraussetzungen](#voraussetzungen)
+3. [Schnellstart (interaktiv)](#schnellstart-interaktiv)
+4. [Was installiert das Skript genau?](#was-installiert-das-skript-genau)
+5. [Weboberflächen und Login](#weboberflächen-und-login)
+6. [Telefone benennen und sortieren](#telefone-benennen-und-sortieren)
+7. [Snom Action-URLs](#snom-action-urls)
+8. [DND per Klick auf Kachel](#dnd-per-klick-auf-kachel)
+9. [Betrieb im Alltag](#betrieb-im-alltag)
+10. [Update](#update)
+11. [Deinstallation](#deinstallation)
+12. [Tipps für Dauerbetrieb (Tablet/Monitor)](#tipps-für-dauerbetrieb-tabletmonitor)
+13. [Fehlerbehebung](#fehlerbehebung)
+
+---
+
+## Was macht das Projekt?
+
+Der DND Monitor nimmt Statusmeldungen von Snom-Telefonen entgegen und zeigt sie live als Dashboard an.
+
+Zusätzlich gibt es eine zweite, schreibgeschützte Ansicht für Kollegen (mit Login), die nur den Status sehen sollen.
 
 ---
 
 ## Voraussetzungen
 
-- Ubuntu/Debian-Server oder Proxmox-Container
+- Ubuntu / Debian (auch als Proxmox-Container möglich)
 - Internetzugang auf dem Server
-- Ein Benutzer mit `sudo`-Rechten (oder direkt `root`)
+- Root-Zugriff oder Benutzer mit `sudo`
+- Snom-Telefone, die Action-URLs senden dürfen
 
 ---
 
-## Installation (Schritt für Schritt)
+## Schnellstart (interaktiv)
+
+> Die Installation ist jetzt interaktiv und fragt dich Schritt für Schritt.
 
 ### 1) Als root anmelden
-
-Wenn du nicht als root angemeldet bist:
 
 ```bash
 sudo -i
 ```
 
-### 2) Git installieren
+### 2) Git installieren (falls noch nicht vorhanden)
 
 ```bash
 apt update
 apt install -y git
 ```
 
-### 3) Projekt herunterladen
+### 3) Repository klonen
 
 ```bash
 cd /opt
@@ -51,56 +71,88 @@ git clone https://github.com/dataklo/dnd-monitor.git dnd-monitor
 cd dnd-monitor
 ```
 
-### 4) Installation starten
+### 4) Interaktive Installation starten
 
 ```bash
 ./install.sh
 ```
 
-Das Script installiert automatisch alles Nötige (Python, venv, Service usw.) und startet den Dienst.
+Während der Installation fragt das Skript z. B.:
 
-### 5) Im Browser öffnen
+- ob die Installation gestartet werden soll
+- ob am Ende direkt der Service-Status angezeigt werden soll
+
+Am Ende bekommst du eine kompakte Zusammenfassung mit URLs und den nächsten Befehlen.
+
+---
+
+## Was installiert das Skript genau?
+
+Das Installationsskript führt folgende Aufgaben aus:
+
+1. installiert Systempakete
+2. kopiert das Projekt nach `/opt/dnd-monitor`
+3. baut eine Python-Virtualenv
+4. installiert Python-Abhängigkeiten
+5. erstellt Standard-Konfigurationen (falls nicht vorhanden)
+6. schreibt den systemd-Service
+7. aktiviert und startet den Service
+
+Installierte Pakete:
+
+- `python3`
+- `python3-venv`
+- `python3-pip`
+- `rsync`
+- `git`
+- `curl`
+- `nano` ✅
+- `htop` ✅
+
+Damit sind **nano** (Editor) und **htop** (Systemmonitor) direkt mit dabei.
+
+---
+
+## Weboberflächen und Login
+
+Nach erfolgreicher Installation:
+
+- Hauptoberfläche: `http://<SERVER-IP>:5000`
+- Nur-Anzeige (mit Login): `http://<SERVER-IP>:5001`
+
+Beispiel:
 
 ```text
-http://<SERVER-IP>:5000
+http://192.168.1.20:5000
 ```
 
-Beispiel: `http://192.168.1.20:5000`
-
-Zusätzlich läuft automatisch eine **Nur-Anzeige** auf Port `5001`:
-
-```text
-http://<SERVER-IP>:5001
-```
-
-Diese Ansicht ist für Kollegen gedacht: Status sehen ja, aber keine Schaltfunktionen.
-Der Zugriff auf Port `5001` ist mit Benutzername/Passwort (HTTP Basic Auth) geschützt.
-Die Zugangsdaten stehen auf dem Server in:
+Die Read-Only-Zugangsdaten werden in dieser Datei abgelegt:
 
 ```text
 /opt/dnd-monitor/config/readonly-auth.env
 ```
 
-Beispiel zum Anzeigen der Zugangsdaten:
+Anzeigen mit:
 
 ```bash
 cat /opt/dnd-monitor/config/readonly-auth.env
 ```
 
-Wichtig: Die Telefon-Events/API (`/status/...` und `/api/...`) bleiben auf `5001` ohne Login erreichbar,
-damit externe Telefone (z. B. Homeoffice) weiterhin Events senden können.
+Hinweis:
+Die Event/API-Endpunkte (`/status/...` und `/api/...`) bleiben erreichbar,
+damit Telefone weiterhin Status senden können.
 
 ---
 
-## Namen der Telefone anzeigen (statt MAC)
+## Telefone benennen und sortieren
 
-Datei öffnen:
+Konfigurationsdatei öffnen:
 
 ```bash
 nano /opt/dnd-monitor/config/users.json
 ```
 
-Beispielinhalt:
+Beispiel:
 
 ```json
 {
@@ -117,15 +169,16 @@ Beispielinhalt:
 }
 ```
 
+### Bedeutung der `id`
 
-Die `id` steuert die Reihenfolge im Raster:
-- `1` = oben links (1. Zeile), `4` = oben rechts (bei 4 Spalten)
-- `5` beginnt in der 2. Zeile links usw.
-- Fehlt eine Zahl, wird einfach die nächste vorhandene Kachel angezeigt.
+- `1` = links oben
+- danach fortlaufend in Leserichtung
+- fehlende IDs werden einfach übersprungen
 
-Unbekannte MAC-Adressen werden bei einem Event automatisch in `/opt/dnd-monitor/config/users.json` angelegt und erhalten die nächste freie `id` ab `101`.
+Unbekannte MAC-Adressen werden automatisch in `users.json` angelegt
+und bekommen die nächste freie ID (ab `101`).
 
-Danach Dienst neu starten:
+Danach neu starten:
 
 ```bash
 systemctl restart dnd-monitor
@@ -133,9 +186,9 @@ systemctl restart dnd-monitor
 
 ---
 
-## Snom Action-URLs eintragen
+## Snom Action-URLs
 
-Diese URLs müssen in die Snom-Konfiguration:
+Diese URLs in der Snom-Konfiguration hinterlegen:
 
 ```xml
 <action_dnd_on_url perm="R">http://<SERVER-IP>:5000/status/dnd-on?mac=$mac</action_dnd_on_url>
@@ -144,79 +197,111 @@ Diese URLs müssen in die Snom-Konfiguration:
 <action_disconnected_url perm="R">http://<SERVER-IP>:5000/status/disconnected?mac=$mac</action_disconnected_url>
 ```
 
-Bei jedem Event prüft der Monitor die Quell-IP zum Telefon (MAC → IP) und schreibt sie nur in `data/phones.json`, wenn sie sich geändert hat.
-
-### DND per Klick auf Kachel auslösen
-
-Wenn du im Dashboard auf den **Namen** einer Kachel tippst/klickst, ruft der Server am passenden Telefon auf:
-
-```bash
-curl --digest -u root:lbs2021 "http://<telefon-ip>/command.htm?key=DND"
-```
-
-Die `<telefon-ip>` kommt automatisch aus der zuletzt zur MAC gespeicherten Event-IP (DHCP-geeignet).
-
-Vor dem Auslösen erscheint eine Sicherheitsabfrage (Bestätigen/Abbrechen).
-
-Zum Schutz vor Mehrfachklicks gilt pro Telefon ein Cooldown von 5 Sekunden.
+Bei jedem Event wird die Quell-IP geprüft und nur bei Änderung gespeichert.
 
 ---
 
-## Wichtige Befehle im Alltag
+## DND per Klick auf Kachel
 
-Status prüfen:
+Ein Klick auf den **Namen** einer Kachel kann DND direkt am Telefon schalten.
+
+Server-seitig wird dafür ein Request in dieser Form ausgelöst:
+
+```bash
+curl --digest -u root:PASSWORT "http://<telefon-ip>/command.htm?key=DND"
+```
+
+Schutzmechanismen:
+
+- Sicherheitsabfrage vor dem Auslösen
+- Cooldown (5 Sekunden) pro Telefon gegen Doppelklicks
+
+---
+
+## Betrieb im Alltag
+
+Service-Status:
 
 ```bash
 systemctl status dnd-monitor --no-pager
 ```
 
-Neu starten:
+Neustarten:
 
 ```bash
 systemctl restart dnd-monitor
 ```
 
-Live-Log ansehen:
+Logs live:
 
 ```bash
 journalctl -u dnd-monitor -f
 ```
 
+Hilfreiche Admin-Tools:
+
+```bash
+nano /opt/dnd-monitor/config/users.json
+htop
+```
+
 ---
 
-## Update durchführen
-
-Wenn neue Versionen verfügbar sind:
+## Update
 
 ```bash
 cd /opt/dnd-monitor
 ./update.sh
 ```
 
-Was passiert dabei?
-- `git pull` lädt den neuesten Stand
-- `install.sh` wird danach erneut ausgeführt
-- Dienst wird mit der neuen Version gestartet
+Ablauf:
+
+- `git pull`
+- `install.sh` erneut ausführen
+- Service mit neuer Version starten
 
 ---
 
 ## Deinstallation
-
-Wenn du das Projekt komplett entfernen willst:
 
 ```bash
 cd /opt/dnd-monitor
 ./uninstall.sh
 ```
 
-Das Script stoppt und entfernt den Service und löscht das Verzeichnis `/opt/dnd-monitor`.
+Dabei werden Service und Projektverzeichnis entfernt.
 
 ---
 
-## Tipp für Wand-Tablet / Daueranzeige
+## Tipps für Dauerbetrieb (Tablet/Monitor)
 
-- Browser im Vollbild starten
-- Auto-Sperre deaktivieren
-- Seite als Startseite festlegen
+- Browser im Vollbild
+- Bildschirm-Sperre deaktivieren
+- Dashboard als Startseite setzen
+- Optional: Kiosk-Modus verwenden
 
-Dann hast du eine saubere, dauerhafte Statusanzeige ohne Scrollen.
+---
+
+## Fehlerbehebung
+
+### Service startet nicht
+
+```bash
+journalctl -u dnd-monitor -n 200 --no-pager
+```
+
+### Port 5000/5001 nicht erreichbar
+
+- Firewall prüfen
+- Container/VM-Netzwerk prüfen
+- Mit `ss -tulpen | grep 500` kontrollieren, ob Prozesse lauschen
+
+### Login für Port 5001 vergessen
+
+```bash
+cat /opt/dnd-monitor/config/readonly-auth.env
+```
+
+---
+
+Viel Erfolg beim Einrichten 👋
